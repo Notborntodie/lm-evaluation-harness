@@ -1,16 +1,12 @@
-# This file will be included in the generated language-specific task configs.
-# It doesn't have a yaml file extension as it is not meant to be imported directly
-# by the harness.
-tag: xquad
-task: null
+task: xquad_es
 dataset_path: xquad
-dataset_name: null
+dataset_name: xquad.es
 output_type: generate_until
-validation_split: validation
-doc_to_text: null
+doc_to_text: "Contexto: {{context}}\n\nPregunta: {{question}}\n\nRespuesta:"
 doc_to_target: '{{answers["text"][0]}}'
-process_results: !function utils.process_results_qa
+validation_split: validation
 target_delimiter: ' '
+process_results: !function utils.process_results_qa
 generation_kwargs:
   until:
     - "\n"

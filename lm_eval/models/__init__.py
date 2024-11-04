@@ -5,7 +5,6 @@ from . import (
     gguf,
     hf_vlms,
     huggingface,
-    ibm_watsonx_ai,
     mamba_lm,
     nemo_lm,
     neuralmagic,

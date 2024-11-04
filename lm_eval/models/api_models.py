@@ -73,13 +73,9 @@ class TemplateAPI(TemplateLM):
         seed: int = 1234,
         max_length: Optional[int] = 2048,
         add_bos_token: bool = False,
-        custom_prefix_token_id: int = None,
+        custom_prefix_token_id=None,
         # send the requests as tokens or strings
-        tokenized_requests: bool = True,
-        trust_remote_code: bool = False,
-        revision: Optional[str] = "main",
-        use_fast_tokenizer: bool = True,
-        verify_certificate: bool = True,
+        tokenized_requests=True,
         **kwargs,
     ) -> None:
         super().__init__()
@@ -121,7 +117,6 @@ class TemplateAPI(TemplateLM):
         self.custom_prefix_token_id = custom_prefix_token_id
         self.tokenized_requests = tokenized_requests
         self.max_retries = int(max_retries)
-        self.verify_certificate = verify_certificate
 
         eval_logger.info(f"Using tokenizer {self.tokenizer_backend}")
         if self.tokenizer_backend is None:
@@ -133,10 +128,7 @@ class TemplateAPI(TemplateLM):
                     import transformers
 
                     self.tokenizer = transformers.AutoTokenizer.from_pretrained(
-                        self.tokenizer if self.tokenizer else self.model,
-                        trust_remote_code=trust_remote_code,
-                        revision=revision,
-                        use_fast=use_fast_tokenizer,
+                        self.tokenizer if self.tokenizer else self.model
                     )
                     # Not used as the API will handle padding but to mirror the behavior of the HFLM
                     self.tokenizer = configure_pad_token(self.tokenizer)
@@ -146,7 +138,7 @@ class TemplateAPI(TemplateLM):
 
                         self.tokenizer = tiktoken.encoding_for_model(self.model)
                     except ModuleNotFoundError as e:
-                        raise ModuleNotFoundError(
+                        raise Exception(
                             "Attempted to use 'openai' LM type, but the package `tiktoken` is not installed. "
                             "Please install it via `pip install lm-eval[api]` or `pip install -e .[api]`."
                         ) from e
@@ -161,9 +153,6 @@ class TemplateAPI(TemplateLM):
                 assert isinstance(tokenizer, str), "tokenizer must be a string"
                 self.tokenizer = transformers.AutoTokenizer.from_pretrained(
                     tokenizer,
-                    trust_remote_code=trust_remote_code,
-                    revision=revision,
-                    use_fast=use_fast_tokenizer,
                 )
 
     @abc.abstractmethod
@@ -326,6 +315,7 @@ class TemplateAPI(TemplateLM):
     def model_call(
         self,
         messages: Union[List[List[int]], List[str], List[JsonChatStr]],
+        prompts: Optional[List[Tuple[str, str]]] = None,    # !!! Add prompts to the model_call method !!!
         *,
         generate: bool = True,
         gen_kwargs: Optional[Dict] = None,
@@ -334,6 +324,7 @@ class TemplateAPI(TemplateLM):
         # !!! Copy: shared dict for each request, need new object !!!
         gen_kwargs = copy.deepcopy(gen_kwargs)
         try:
+            '''
             response = requests.post(
                 self.base_url,
                 json=self._create_payload(
@@ -344,14 +335,37 @@ class TemplateAPI(TemplateLM):
                     **kwargs,
                 ),
                 headers=self.header,
-                verify=self.verify_certificate,
             )
+            '''
+            
+            model_name = "model_name"
+
+            # Initialize an empty list to store the responses
+            all_responses = []
+
+            # Iterate through each prompt and send a separate request for each
+            for context, continuation in prompts:
+                payload = {
+                    'model': model_name,
+                    'context': context,
+                    'continuation': continuation
+                }
+                # Make the POST request for each item in the prompts list
+                response = requests.post(
+                    url=self.base_url,
+                    json=payload,
+                    headers=self.header
+                )
+                # Append each response JSON to the list
+                all_responses.append(response.json())
+
             if not response.ok:
                 eval_logger.warning(
                     f"API request failed with error message: {response.text}. Retrying..."
                 )
             response.raise_for_status()
-            return response.json()
+            return all_responses    
+            #return response.json()
         except RetryError:
             eval_logger.error(
                 "API request failed after multiple retries. Please check the API status."
@@ -371,6 +385,7 @@ class TemplateAPI(TemplateLM):
     ) -> Union[List[str], List[Tuple[float, bool]], None]:
         # !!! Copy: shared dict for each request, need new object !!!
         gen_kwargs = copy.deepcopy(gen_kwargs)
+        print("amodel_call")
         payload = self._create_payload(
             self.create_message(messages),
             generate=generate,
@@ -432,6 +447,7 @@ class TemplateAPI(TemplateLM):
                 inputs.append(inp)
                 ctxlens.append(ctxlen)
                 cache_keys.append(cache_key)
+                #print("context"+cache_key[0]+"continuation"+cache_key[1]+"\n")
         return inputs, ctxlens, cache_keys
 
     async def get_batched_requests(
@@ -501,14 +517,18 @@ class TemplateAPI(TemplateLM):
             pbar = tqdm(desc="Requesting API", total=len(requests))
             for chunk in chunked:
                 inputs, ctxlens, cache_keys = self.batch_logliklehood_requests([chunk])
-
+                #print("inputs"+str(inputs[])+"\n")
+                #print("ctxlens"+str(ctxlens)+"\n")
+                #print("cache_keys"+str(cache_keys[0][0])+"\n")
+                #print("cache_keys"+str(cache_keys[0][1])+"\n")
                 outputs = retry(
                     stop=stop_after_attempt(self.max_retries),
                     wait=wait_exponential(multiplier=0.5, min=1, max=10),
                     reraise=True,
-                )(self.model_call)(messages=inputs, generate=False)
+                )(self.model_call)(messages=inputs, generate=False,prompts=cache_keys)
                 if isinstance(outputs, dict):
                     outputs = [outputs]
+                
                 for answer_, cache_key in zip(
                     self.parse_logprobs(
                         outputs=outputs, tokens=inputs, ctxlens=ctxlens
@@ -517,6 +537,7 @@ class TemplateAPI(TemplateLM):
                 ):
                     if answer_ is not None:
                         res.append(answer_)
+                        #print("answer_"+str(answer_)+"\n")
                         # cache requests that aren't from a loglikelihood_rolling request
                         if cache_key is not None:
                             self.cache_hook.add_partial(

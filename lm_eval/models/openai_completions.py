@@ -66,6 +66,15 @@ class LocalCompletionsAPI(TemplateAPI):
         if not isinstance(outputs, list):
             outputs = [outputs]
         for out in outputs:
+        # Extract logprobs and is_greedy from the output dictionary
+            logprob = out.get('logprob', None)
+            is_greedy = out.get('is_greedy', None)
+        
+            if logprob is not None and is_greedy is not None:
+                # Append the tuple (logprobs, is_greedy) to the result list
+                res.append((logprob, is_greedy))
+        '''
+        for out in outputs:
             for choice, ctxlen in zip(out["choices"], ctxlens):
                 assert ctxlen > 0, "Context length must be greater than 0"
                 logprobs = sum(choice["logprobs"]["token_logprobs"][ctxlen:-1])
@@ -77,6 +86,7 @@ class LocalCompletionsAPI(TemplateAPI):
                         is_greedy = False
                         break
                 res.append((logprobs, is_greedy))
+        '''
         return res
 
     @staticmethod

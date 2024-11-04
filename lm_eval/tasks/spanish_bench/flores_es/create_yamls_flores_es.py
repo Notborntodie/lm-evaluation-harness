@@ -1,14 +1,13 @@
-# ruff: noqa: E731, E741
 """
 Script to generate task YAMLs for the FLORES-200 dataset.
 Based on `tasks/translation/utils.py`.
 """
 
 import argparse
-import itertools
+from itertools import *
 
 import yaml
-from langcodes import Language
+from langcodes import *
 
 
 # utils
